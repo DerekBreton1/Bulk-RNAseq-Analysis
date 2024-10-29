@@ -1,0 +1,23 @@
+files = ['SRR31122807']
+
+
+
+rule all:
+    input:
+        expand('results/{name}_fastqc.html', name=files)
+
+
+# Initial quality control
+rule fastqc:
+    input:
+        fastq = 'data/{name}.fastq.gz'
+    output:
+        fastqc = 'results/{name}_fastqc.html'
+    params:
+        outdir = 'results/'
+    conda:
+        'envs/fastqc_env.yaml'
+    shell:
+        '''
+        fastqc {input.fastq} -o {params.outdir}
+        '''
