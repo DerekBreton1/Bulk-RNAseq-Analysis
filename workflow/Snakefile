@@ -1,5 +1,6 @@
-files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR12007849', 'SRR12007851', 'SRR12007855', 'SRR12007861', 'SRR12007869']
-
+#files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR12007849', 'SRR12007851', 'SRR12007855', 'SRR12007861', 'SRR12007869']
+files = ['Healthy_15', 'Healthy_72', 'Healthy_75', 'Severe_77', 'Severe_78', 'Severe_90', 'ICU_79', 'ICU_81', 'ICU_84']
+readpairs = ['R1', 'R2']
 
 rule all:
     input:
