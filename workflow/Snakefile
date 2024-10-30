@@ -3,7 +3,10 @@ files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR1200784
 
 rule all:
     input:
-        'results/multiqc_report.html'
+        'results/multiqc_report.html',
+        expand('results/{name}.Aligned.out.bam', name=files),
+        expand('results/{name}_flagstats.txt', name=files),
+        'results/verse_concat.csv'
 
 
 # Initial quality control
@@ -119,4 +122,15 @@ rule verse:
     shell:
         '''
         verse -S -a {input.gtf} -o {params.prefix} {input.bam}
+        '''
 
+# Concat the VERSE output into one file
+rule concat_verse:
+    input:
+        verse_exons = expand('results/{name}.exon.txt', name=files)
+    output:
+        concat = 'results/verse_concat.csv'
+    shell:
+        '''
+        python combine_df.py -i {input.verse_exons} -o {output.concat}
+        '''
