@@ -1,10 +1,9 @@
-files = ['SRR31122807']
-
+files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR12007849', 'SRR12007851', 'SRR12007855', 'SRR12007861', 'SRR12007869']
 
 
 rule all:
     input:
-        expand('results/{name}_fastqc.html', name=files)
+        'results/multiqc_report.html'
 
 
 # Initial quality control
@@ -20,4 +19,19 @@ rule fastqc:
     shell:
         '''
         fastqc {input.fastq} -o {params.outdir}
+        '''
+
+# Aggregate the fastqc files
+rule multiqc:
+    input:
+        expand('results/{name}_fastqc.html', name = files)
+    output:
+        report = 'results/multiqc_report.html'
+    params:
+        outdir = 'results/'
+    conda:
+        'envs/multiqc_env.yaml'
+    shell:
+        '''
+        multiqc {params.outdir} -o {params.outdir}
         '''
