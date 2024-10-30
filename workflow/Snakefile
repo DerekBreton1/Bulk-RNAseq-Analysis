@@ -4,9 +4,9 @@ files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR1200784
 rule all:
     input:
         'results/multiqc_report.html',
-        expand('results/{name}.Aligned.out.bam', name=files),
-        expand('results/{name}_flagstats.txt', name=files),
-        'results/verse_concat.csv'
+        'results/abundance.h5',
+        'results/abundance.tsv',
+        'results/run_info.json'
 
 
 # Initial quality control
@@ -39,98 +39,48 @@ rule multiqc:
         multiqc {params.outdir} -o {params.outdir}
         '''
 
-# Get the Human GRCh38 primary assembly genome fasta file (release 47)
-rule wget_h38:
+# Download and merge cDNA and ncDNA
+rule download_merge_DNA:
     output:
-        'results/GRCh38.primary_assembly.genome.fa'
+        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa.gz'
     params:
-        ftp_path = 'https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/GRCh38.primary_assembly.genome.fa.gz'
+        cDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz',
+        ncDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/ncrna/Homo_sapiens.GRCh38.ncrna.fa.gz'
     shell:
         '''
-        wget -P results/ {params.ftp_path}
-        gunzip results/GRCh38.primary_assembly.genome.fa.gz
+        wget -P results/ {params.cDNA}
+        wget -P results/ {params.ncDNA}
+        cat results/Homo_sapiens.GRCh38.cdna.all.fa.gz results/Homo_sapiens.GRCh38.ncrna.fa.gz > {output.transcriptome}
         '''
 
-# Get the Human v47 primary assembly gtf file
-rule wget_h38_gtf:
+# Build a Kallisto index
+rule build_kallisto_index:
+    input:
+        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa.gz'
     output:
-        'results/gencode.v47.primary_assembly.annotation.gtf'
+        index = 'results/hsGRCh38_kallisto.idx'
+    conda:
+        'envs/kallisto_env.yaml'
+    shell:
+        '''
+        kallisto index -i {output.index} {input.transcriptome}
+        '''
+
+# Quantify abundances of transcripts
+rule quant:
+    input:
+        index = 'results/hsGRCh38_kallisto.idx',
+        fastq = expand('results/{name}.fastq.gz', name=files)
+    output:
+        'results/abundance.h5',
+        'results/abundance.tsv',
+        'results/run_info.json'
     params:
-        ftp_path = 'https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_47/gencode.v47.primary_assembly.annotation.gtf.gz'
-    shell:
-        '''
-        wget -P results/ {params.ftp_path}
-        gunzip results/gencode.v47.primary_assembly.annotation.gtf.gz
-        '''
-
-# Build STAR index
-rule build_star_index:
-    input:
-        fa = 'results/GRCh38.primary_assembly.genome.fa',
-        gtf = 'results/gencode.v47.primary_assembly.annotation.gtf'
-    output:
-        genome_dir = 'results/genome/'
-    threads: 4
+        outdir = 'results/'
+    threads: 2
     conda:
-        'envs/star_env.yaml'
+        'envs/kallisto_env.yaml'
     shell:
         '''
-        STAR --runMode genomeGenerate --genomeDir {output.genome_dir} --genomeFastaFiles {input.fa} --sjdbGTFfile {input.gtf}
-        '''
-
-# Align reads to the reference genome
-rule star:
-    input:
-        fastq = 'data/{name}.fastq.gz',
-        genome_dir = 'results/genome'
-    output:
-        bam = 'results/{name}.Aligned.out.bam'
-    params:
-        prefix = 'results/{name}'
-    threads: 4
-    conda:
-        'envs/star_env.yaml'
-    shell:
-        '''
-        STAR --runThreadN {threads} --genomeDir {input.genome_dir} --readFilesIn {input.fastq} --readFilesCommand zcat --outSAMtype BAM Unsorted --outFileNamePrefix {params.prefix}
-        '''
-
-# Perform alignment level QC
-rule samtools_flagstat:
-    input:
-        bam = 'results/{name}.Aligned.out.bam'
-    output:
-        flagstats = 'results/{name}_flagstats.txt'
-    conda:
-        'envs/samtools_env.yaml'
-    shell:
-        '''
-        samtools flagstats {input.bam} > {output.flagstats}
-        '''
-
-# Generate counts
-rule verse:
-    input:
-        bam = 'results/{name}.Aligned.out.bam',
-        gtf = 'results/gencode.v47.primary_assembly.annotation.gtf'
-    output:
-        verse_exons = 'results/{name}.exon.txt'
-    params:
-        prefix = 'results/{name}'
-    conda:
-        'envs/verse_env.yaml'
-    shell:
-        '''
-        verse -S -a {input.gtf} -o {params.prefix} {input.bam}
-        '''
-
-# Concat the VERSE output into one file
-rule concat_verse:
-    input:
-        verse_exons = expand('results/{name}.exon.txt', name=files)
-    output:
-        concat = 'results/verse_concat.csv'
-    shell:
-        '''
-        python combine_df.py -i {input.verse_exons} -o {output.concat}
+        kallisto quant -i {input.index} -o {params.outdir} -t {threads} {input.index}
         '''
