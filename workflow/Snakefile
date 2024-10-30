@@ -81,7 +81,7 @@ rule build_star_index:
 # Align reads to the reference genome
 rule star:
     input:
-        fastq = 'data/{name}.fastq.gz'
+        fastq = 'data/{name}.fastq.gz',
         genome_dir = 'results/genome'
     output:
         bam = 'results/{name}.Aligned.out.bam'
@@ -102,7 +102,7 @@ rule samtools_flagstat:
     output:
         flagstats = 'results/{name}_flagstats.txt'
     conda:
-        'envs/samtools_env.yml'
+        'envs/samtools_env.yaml'
     shell:
         '''
         samtools flagstats {input.bam} > {output.flagstats}
@@ -118,7 +118,7 @@ rule verse:
     params:
         prefix = 'results/{name}'
     conda:
-        'envs/verse_env.yml'
+        'envs/verse_env.yaml'
     shell:
         '''
         verse -S -a {input.gtf} -o {params.prefix} {input.bam}
