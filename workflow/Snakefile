@@ -1,21 +1,19 @@
-#files = ['SRR12007825', 'SRR12007837', 'SRR12007843', 'SRR12007847', 'SRR12007849', 'SRR12007851', 'SRR12007855', 'SRR12007861', 'SRR12007869']
 files = ['Healthy_15', 'Healthy_72', 'Healthy_75', 'Severe_77', 'Severe_78', 'Severe_90', 'ICU_79', 'ICU_81', 'ICU_84']
 readpairs = ['R1', 'R2']
 
 rule all:
     input:
         'results/multiqc_report.html',
-        'results/abundance.h5',
-        'results/abundance.tsv',
-        'results/run_info.json'
+        expand('results/{name}/abundance.h5', name=files),
+        expand('results/{name}/abundance.tsv', name=files)
 
 
 # Initial quality control
 rule fastqc:
     input:
-        fastq = 'data/{name}.fastq.gz'
+        fastq = 'data/{name}_{read}.fastq.gz'
     output:
-        fastqc = 'results/{name}_fastqc.html'
+        fastqc = 'results/{name}_{read}_fastqc.html'
     params:
         outdir = 'results/'
     conda:
@@ -28,7 +26,7 @@ rule fastqc:
 # Aggregate the fastqc files
 rule multiqc:
     input:
-        expand('results/{name}_fastqc.html', name = files)
+        expand('results/{name}_{read}_fastqc.html', name = files, read = readpairs)
     output:
         report = 'results/multiqc_report.html'
     params:
@@ -43,7 +41,7 @@ rule multiqc:
 # Download and merge cDNA and ncDNA
 rule download_merge_DNA:
     output:
-        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa.gz'
+        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa'
     params:
         cDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz',
         ncDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/ncrna/Homo_sapiens.GRCh38.ncrna.fa.gz'
@@ -51,13 +49,13 @@ rule download_merge_DNA:
         '''
         wget -P results/ {params.cDNA}
         wget -P results/ {params.ncDNA}
-        cat results/Homo_sapiens.GRCh38.cdna.all.fa.gz results/Homo_sapiens.GRCh38.ncrna.fa.gz > {output.transcriptome}
+        zcat results/Homo_sapiens.GRCh38.cdna.all.fa.gz results/Homo_sapiens.GRCh38.ncrna.fa.gz > {output.transcriptome}
         '''
 
 # Build a Kallisto index
 rule build_kallisto_index:
     input:
-        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa.gz'
+        transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa'
     output:
         index = 'results/hsGRCh38_kallisto.idx'
     conda:
@@ -71,17 +69,17 @@ rule build_kallisto_index:
 rule quant:
     input:
         index = 'results/hsGRCh38_kallisto.idx',
-        fastq = expand('results/{name}.fastq.gz', name=files)
+        r1 = 'data/{name}_R1.fastq.gz',
+        r2 = 'data/{name}_R2.fastq.gz'
     output:
-        'results/abundance.h5',
-        'results/abundance.tsv',
-        'results/run_info.json'
+        abundance_h5 = 'results/{name}/abundance.h5',
+        abundance_tsv = 'results/{name}/abundance.tsv'
     params:
-        outdir = 'results/'
+        outdir = 'results/{name}'
     threads: 2
     conda:
         'envs/kallisto_env.yaml'
     shell:
         '''
-        kallisto quant -i {input.index} -o {params.outdir} -t {threads} {input.index}
+        kallisto quant -i {input.index} -o {params.outdir} -t {threads} -b 50 {input.r1} {input.r2}
         '''
