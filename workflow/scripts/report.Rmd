@@ -1,0 +1,321 @@
+---
+title: "Analysis Report"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+```{r}
+library(tidyverse)
+library(DESeq2)
+library(tximport)
+library(readr)
+#library(AnnotationDbi)
+#library(ensembldb)
+#library(biomaRt)
+library(fgsea)
+library(rtracklayer)
+```
+
+
+
+
+
+# Create colData
+```{r}
+dir <- "../../results"
+coldata <- read.table(file.path(dir,"samples.txt"), header=TRUE)
+coldata$condition <- c("C","C","C","I","I","I","I","I","I")
+
+coldata
+```
+
+
+
+
+# Create tx2gene file
+```{r}
+# Import GTF file
+gtf <- import("../../data/Homo_sapiens.GRCh38.113.gtf.gz")
+
+# Filter for transcript-level entries, including both coding and non-coding transcripts
+tx2gene <- as.data.frame(gtf[gtf$type == "transcript", c("transcript_id", "gene_id", "gene_name")])
+
+# Remove transcript version numbers (optional, if necessary for compatibility)
+tx2gene$transcript_id <- sub("\\..*$", "", tx2gene$transcript_id)
+
+# Use only transcript_id and gene_id columns
+tx2gene <- tx2gene[, c("transcript_id", "gene_id", "gene_name")]
+
+# Save as CSV file
+#write.csv(tx2gene, "tx2gene_updated.csv", row.names = FALSE)
+head(tx2gene)
+```
+
+
+
+
+# Load Kallisto abundance data
+```{r}
+files <- file.path(dir, coldata$sample, "abundance.h5")
+names(files) <- coldata$sample
+txi.kallisto <- tximport(files, type = "kallisto", tx2gene = tx2gene, ignoreTxVersion = TRUE)
+head(txi.kallisto$counts)
+```
+
+
+```{r}
+# Convert abundance into matrix
+variances <- apply(txi.kallisto$counts, 1, var)
+
+#Filter genes with zero variance
+pca_data <- txi.kallisto$counts[variances > 0, ]
+
+# Run PCA
+pca <- prcomp(scale(t(pca_data)), center=FALSE, scale=FALSE)
+
+#Calculate expected variance
+exp_variance <- ((pca$sdev**2)/(sum(pca$sdev**2)))*100
+  
+#Create variables to store axis labels
+x_var <- paste('PC1: ', toString(round(exp_variance[1], digits = 0)), '% variance', sep = '')
+y_var <- paste('PC2: ', toString(round(exp_variance[2]), digits = 0), '% variance', sep = '')
+
+# Plot PCA 
+pca_plot <- as_tibble(pca$x) %>%
+    mutate(type=stringr::str_sub(rownames(pca$x),1,1)) %>%
+    ggplot(aes(x=PC1,y=PC2,color=coldata$condition)) +
+    geom_point() +
+    labs(title = "PCA Plot of Abundance",
+         color = 'Condition',
+         x = x_var,
+         y = y_var)
+pca_plot
+```
+
+
+
+
+
+# Create DESeq Dataset from txi.kallisto and samples data
+```{r}
+ddsTxi <- DESeqDataSetFromTximport(txi.kallisto,
+                                   colData = coldata,
+                                   design = ~ condition)
+
+ddsTxi
+```
+
+# Run DESeq
+```{r}
+dds <- DESeq(ddsTxi)
+res <- results(dds)
+res
+```
+
+# Label results with significance and up or down regulation
+```{r}
+#Create tibble to store labeled results
+padj_threshold = 0.05
+
+labeled_results <- as_tibble(res) %>%
+  #Add a column for genes
+  dplyr::mutate(genes = rownames(res), .before = 1) %>%
+  #Assign UP, DOWN, or NS conditionally
+  dplyr::mutate(volc_plot_status = case_when(
+    padj < padj_threshold & log2FoldChange > 0 ~ 'UP',
+    padj < padj_threshold & log2FoldChange < 0 ~ 'DOWN',
+    padj >= padj_threshold | log2FoldChange == 0 ~ 'NS',
+    ),
+    .after = 1
+  )
+labeled_results
+```
+
+
+
+# Add gene symbols
+```{r}
+tx2gene_unique <- tx2gene[!duplicated(tx2gene$gene_id), ]
+
+labeled_results <- merge(labeled_results, tx2gene_unique[, c("gene_id", "gene_name")], by.x = "genes", by.y = "gene_id", all.x = TRUE)
+
+labeled_results
+```
+
+
+
+
+
+
+# Create p-value plot
+```{r}
+pval_plot <- labeled_results %>%
+    dplyr::filter(!is.na(padj)) %>%
+    ggplot(aes(x = pvalue)) +
+    geom_histogram(bins = 100, color = 'black', fill = 'lightblue') +
+    ggtitle('Histogram of raw pvalues obtained from DE analysis')
+pval_plot
+```
+
+# Plot log2fc
+```{r}
+log2fc_plot <- labeled_results %>%
+    dplyr::filter(padj < 0.1) %>%
+    ggplot(aes(x = log2FoldChange)) +
+    geom_histogram(bins = 100, color = 'black', fill = 'lightblue') +
+    ggtitle('Histogram of log2FoldChanges for DE Genes)')
+log2fc_plot
+```
+
+# Function to make scatter plot of normalized counts for top ten genes ranked by ascending padj
+```{r}
+num_genes = 10
+
+#Normalize the DESeq object
+dds_norm <- as_tibble(results(estimateSizeFactors(dds))) %>%
+  dplyr::mutate(genes = rownames(results(dds)), .before = 1)
+
+# Slice the top ranked genes based on padj
+sliced_res <- dds_norm %>%
+  dplyr::slice_min(padj, n = num_genes)
+
+# Add volcano plot status and gene symbols to sliced_res
+status_symbol <- dplyr::select(labeled_results, c('genes','volc_plot_status','gene_name'))
+
+sliced_res <- merge(sliced_res, status_symbol)
+
+print(sliced_res)
+
+#Plot the labeled results
+scatter_plot <- ggplot(sliced_res, aes(x = reorder(gene_name, log2FoldChange), y = log2FoldChange)) +
+  geom_point() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+scatter_plot
+```
+
+```{r}
+dds_norm
+
+labeled_dds_norm <- merge(dds_norm, tx2gene_unique[, c("gene_id", "gene_name")], by.x = "genes", by.y = "gene_id", all.x = TRUE)
+
+labeled_dds_norm
+```
+
+
+# Create volcano plot
+```{r}
+volcano_plot <- labeled_results %>%
+    dplyr::filter(!is.na(padj)) %>%
+    dplyr::mutate(`-log10(adjusted p)` = -log10(padj)) %>%
+    ggplot(aes(x = log2FoldChange, y = `-log10(adjusted p)`, color = volc_plot_status)) +
+      geom_point() + 
+      ggtitle('Volcano plot')
+volcano_plot
+```
+
+
+# Make ranked log2FC list
+```{r}
+# Remove NAs in log2foldchange and gene names, then filter by padj
+labeled_results_nona <- labeled_results %>%
+  dplyr::filter(!is.na(gene_name)) %>%
+  dplyr::filter(padj < 0.05)
+
+labeled_results_nona
+
+# Rank genes by log2FoldChange
+rnk_list <- labeled_results_nona$log2FoldChange
+names(rnk_list) <- labeled_results_nona$gene_name
+
+# Sort by descending
+rnk_list <- sort(rnk_list, decreasing = TRUE)
+
+head(rnk_list)
+```
+
+
+# Run FGSEA
+```{r}
+gmt_file_path = "../../data/c2.all.v2024.1.Hs.symbols.gmt"
+min_size = 15
+max_size = 500
+
+#Read gmt file
+gmt_set <- fgsea::gmtPathways(gmt_file_path)
+  
+#Perform fgsea
+fgsea_results <- fgsea(
+  pathways = gmt_set,
+  stats = rnk_list,
+  minSize = min_size,
+  maxSize = max_size
+)
+
+# Tidy results: Sort by normalized enrichment score (NES)
+fgsea_results_tidy <- as_tibble(fgsea_results) %>%
+  dplyr::arrange(desc(NES)) %>%
+  dplyr::filter(padj < 0.05)
+
+fgsea_results_tidy
+```
+
+
+# Function to plot top ten positive NES and top ten negative NES pathways in a barchart
+```{r}
+num_paths = 10
+
+
+
+#Select top rows of NES
+top_end <- fgsea_results %>%
+  dplyr::slice_max(NES, n = num_paths)
+#Select bottom rows of NES
+bottom_end <- fgsea_results %>%
+  dplyr::slice_min(NES, n = num_paths)
+#Combine the top and bottom
+combined <- as_tibble(bind_rows(top_end, bottom_end)) %>%
+  dplyr::arrange(NES)
+
+#Plot the barplot
+fgsea_plot <- combined %>%
+  #Create a column to indicate positive or negative values
+  dplyr::mutate(sign = case_when(
+    NES > 0 ~ 'positive',
+    NES < 0 ~ 'negative'
+  )
+) %>%
+  ggplot(aes(x = reorder(pathway, NES), y = NES, fill = sign))+
+    geom_bar(stat = 'identity')+
+    coord_flip() +
+    labs(x = "Gene set", y = "NES")
+
+fgsea_plot
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
