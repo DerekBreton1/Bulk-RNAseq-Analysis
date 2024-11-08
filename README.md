@@ -5,7 +5,7 @@ Derek Breton
 -  [Introduction](#introduction)
 -  [Methods](#methods)
 -  [Results](#results)
-    -  [PCA plot](#pca-plot)
+    -  [PCA](#pca)
     -  [Differential expression analysis](#differential-expression-analysis)
     -  [Gene set enrichment analysis](#gene-set-enrichment-analysis)  
 
@@ -22,13 +22,19 @@ RNA sequencing data were obtained from 3 healthy and 6 COVID-19 infected human d
 Results
 -------
 
-### PCA plot
+### PCA
+![](results/images/pca_plot.png)
+
 
 
 ### Differential expression analysis
+![](results/images/volcano_plot.png)
+
 
 
 ### Gene set enrichment analysis
+![](results/images/gsea_plot.png)
+
 
 
 ## Citations
