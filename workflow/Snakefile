@@ -38,18 +38,20 @@ rule multiqc:
         multiqc {params.outdir} -o {params.outdir}
         '''
 
-# Download and merge cDNA and ncDNA
+# Download and merge cDNA and ncDNA, also download GTF. All release 113
 rule download_merge_DNA:
     output:
         transcriptome = 'results/Homo_sapiens.GRCh38.rna.fa'
     params:
-        cDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz',
-        ncDNA = 'ftp://ftp.ensembl.org/pub/current_fasta/homo_sapiens/ncrna/Homo_sapiens.GRCh38.ncrna.fa.gz'
+        cDNA = 'ftp://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/cdna/Homo_sapiens.GRCh38.cdna.all.fa.gz',
+        ncDNA = 'ftp://ftp.ensembl.org/pub/release-113/fasta/homo_sapiens/ncrna/Homo_sapiens.GRCh38.ncrna.fa.gz',
+        gtf = 'ftp://ftp.ensembl.org/pub/release-113/gtf/homo_sapiens/Homo_sapiens.GRCh38.113.gtf.gz'
     shell:
         '''
-        wget -P results/ {params.cDNA}
-        wget -P results/ {params.ncDNA}
-        zcat results/Homo_sapiens.GRCh38.cdna.all.fa.gz results/Homo_sapiens.GRCh38.ncrna.fa.gz > {output.transcriptome}
+        wget -P data/ {params.cDNA}
+        wget -P data/ {params.ncDNA}
+        wget -P data/ {params.gtf}
+        zcat data/Homo_sapiens.GRCh38.cdna.all.fa.gz data/Homo_sapiens.GRCh38.ncrna.fa.gz > {output.transcriptome}
         '''
 
 # Build a Kallisto index
