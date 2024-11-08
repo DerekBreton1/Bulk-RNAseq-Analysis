@@ -5,7 +5,7 @@ rule all:
     input:
         'results/multiqc_report.html',
         expand('results/{name}/abundance.h5', name=files),
-        expand('results/{name}/abundance.tsv', name=files)
+        "results/report.html"
 
 
 # Initial quality control
@@ -74,8 +74,7 @@ rule quant:
         r1 = 'data/{name}_R1.fastq.gz',
         r2 = 'data/{name}_R2.fastq.gz'
     output:
-        abundance_h5 = 'results/{name}/abundance.h5',
-        abundance_tsv = 'results/{name}/abundance.tsv'
+        abundance_h5 = 'results/{name}/abundance.h5'
     params:
         outdir = 'results/{name}'
     threads: 2
@@ -85,3 +84,13 @@ rule quant:
         '''
         kallisto quant -i {input.index} -o {params.outdir} -t {threads} -b 50 {input.r1} {input.r2}
         '''
+
+# Knit downstream analysis into an HTML file
+# May need to change script to path/to/R/bin/Rscript.exe path/to/your/script.R on Windows 
+rule knit_report:
+    input:
+        "workflow/scripts/report.Rmd"
+    output:
+        "results/report.html"
+    script:
+        "Rscript render_report.R"

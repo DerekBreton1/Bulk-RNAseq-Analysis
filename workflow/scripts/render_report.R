@@ -1,1 +1,1 @@
-rmarkdown::render("report.Rmd", output_file = "report.html")
+rmarkdown::render("workflow/scripts/report.Rmd", output_file = "report.html")

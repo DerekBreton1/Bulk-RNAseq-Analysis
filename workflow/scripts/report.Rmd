@@ -9,36 +9,33 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-
+# Load Packages
 ```{r}
 library(tidyverse)
 library(DESeq2)
+library(rtracklayer) # Loads BiocIO for GTF import
 library(tximport)
 library(readr)
-#library(AnnotationDbi)
-#library(ensembldb)
-#library(biomaRt)
 library(fgsea)
-library(rtracklayer)
 ```
 
 
 
+# Load Data
 
-
-# Create colData
+### Create colData
 ```{r}
+# Load user input samples.txt file containing column data
 dir <- "../../results"
 coldata <- read.table(file.path(dir,"samples.txt"), header=TRUE)
+
+# Manually set column data TO BE REMOVED!
 coldata$condition <- c("C","C","C","I","I","I","I","I","I")
 
 coldata
 ```
 
-
-
-
-# Create tx2gene file
+### Create transcript, gene, and symbol mapping
 ```{r}
 # Import GTF file
 gtf <- import("../../data/Homo_sapiens.GRCh38.113.gtf.gz")
@@ -49,18 +46,13 @@ tx2gene <- as.data.frame(gtf[gtf$type == "transcript", c("transcript_id", "gene_
 # Remove transcript version numbers (optional, if necessary for compatibility)
 tx2gene$transcript_id <- sub("\\..*$", "", tx2gene$transcript_id)
 
-# Use only transcript_id and gene_id columns
+# Use only transcript_id, gene_id, and gene_name columns
 tx2gene <- tx2gene[, c("transcript_id", "gene_id", "gene_name")]
 
-# Save as CSV file
-#write.csv(tx2gene, "tx2gene_updated.csv", row.names = FALSE)
 head(tx2gene)
 ```
 
-
-
-
-# Load Kallisto abundance data
+### Load Kallisto transcript abundance data
 ```{r}
 files <- file.path(dir, coldata$sample, "abundance.h5")
 names(files) <- coldata$sample
@@ -69,6 +61,8 @@ head(txi.kallisto$counts)
 ```
 
 
+
+# Run PCA
 ```{r}
 # Convert abundance into matrix
 variances <- apply(txi.kallisto$counts, 1, var)
@@ -91,7 +85,7 @@ pca_plot <- as_tibble(pca$x) %>%
     mutate(type=stringr::str_sub(rownames(pca$x),1,1)) %>%
     ggplot(aes(x=PC1,y=PC2,color=coldata$condition)) +
     geom_point() +
-    labs(title = "PCA Plot of Abundance",
+    labs(title = "PCA Plot of Transcript Abundance",
          color = 'Condition',
          x = x_var,
          y = y_var)
@@ -100,33 +94,30 @@ pca_plot
 
 
 
+# Run DESeq
 
-
-# Create DESeq Dataset from txi.kallisto and samples data
+### Create DESeq Dataset from txi.kallisto and run DESeq
 ```{r}
 ddsTxi <- DESeqDataSetFromTximport(txi.kallisto,
                                    colData = coldata,
                                    design = ~ condition)
 
 ddsTxi
-```
 
-# Run DESeq
-```{r}
 dds <- DESeq(ddsTxi)
 res <- results(dds)
 res
 ```
 
-# Label results with significance and up or down regulation
+### Label results with significance and up or down regulation
 ```{r}
-#Create tibble to store labeled results
 padj_threshold = 0.05
 
+#Create tibble to store labeled results
 labeled_results <- as_tibble(res) %>%
-  #Add a column for genes
+  #Add a column for genes (tibble strips rownames)
   dplyr::mutate(genes = rownames(res), .before = 1) %>%
-  #Assign UP, DOWN, or NS conditionally
+  #Assign UP, DOWN, or NS (not significant) conditionally
   dplyr::mutate(volc_plot_status = case_when(
     padj < padj_threshold & log2FoldChange > 0 ~ 'UP',
     padj < padj_threshold & log2FoldChange < 0 ~ 'DOWN',
@@ -137,9 +128,7 @@ labeled_results <- as_tibble(res) %>%
 labeled_results
 ```
 
-
-
-# Add gene symbols
+### Add gene symbols
 ```{r}
 tx2gene_unique <- tx2gene[!duplicated(tx2gene$gene_id), ]
 
