@@ -1,32 +1,60 @@
-files = ['Healthy_15', 'Healthy_72', 'Healthy_75', 'Severe_77', 'Severe_78', 'Severe_90', 'ICU_79', 'ICU_81', 'ICU_84']
-readpairs = ['R1', 'R2']
+sra_list = [line.strip() for line in open("data/SRR_Acc_List.txt")]
+reads = [1, 2]
 
 rule all:
     input:
+        expand('data/{name}_{read}.fastq.gz', name=sra_list, read=reads),
         'results/multiqc_report.html',
-        expand('results/{name}/abundance.h5', name=files),
+        expand('results/{name}/abundance.h5', name=sra_list),
         "results/report.html"
 
+# Download SRA files
+rule sra_download:
+    output:
+        srr = 'data/{name}/{name}.sra'
+    params:
+        outdir = 'data/'
+    conda:
+        'envs/sra_toolkit_env.yaml'
+    shell:
+        '''
+        python3 workflow/scripts/sra_download.py {wildcards.name} {params.outdir}
+        '''
+# FASTQ download from SRA ID file
+rule fastq_download:
+    input:
+        srr = 'data/{name}/{name}.sra'
+    output:
+        r1 = 'data/{name}_1.fastq.gz',
+        r2 = 'data/{name}_2.fastq.gz'
+    params:
+        outdir = 'data/'      
+    conda:
+        'envs/sra_toolkit_env.yaml'
+    shell:
+        "python3 workflow/scripts/fastq_download.py {input.srr} {params.outdir}"
 
 # Initial quality control
 rule fastqc:
     input:
-        fastq = 'data/{name}_{read}.fastq.gz'
+        r1 = 'data/{name}_1.fastq.gz',
+        r2 = 'data/{name}_2.fastq.gz'
     output:
-        fastqc = 'results/{name}_{read}_fastqc.html'
+        r1_qc = 'results/{name}_1_fastqc.html',
+        r2_qc = 'results/{name}_2_fastqc.html',
     params:
         outdir = 'results/'
     conda:
         'envs/fastqc_env.yaml'
     shell:
         '''
-        fastqc {input.fastq} -o {params.outdir}
+        fastqc -o {params.outdir} {input.r1} {input.r2}
         '''
 
 # Aggregate the fastqc files
 rule multiqc:
     input:
-        expand('results/{name}_{read}_fastqc.html', name = files, read = readpairs)
+        expand('results/{name}_{read}_fastqc.html', name = sra_list, read = reads)
     output:
         report = 'results/multiqc_report.html'
     params:
@@ -71,8 +99,8 @@ rule build_kallisto_index:
 rule quant:
     input:
         index = 'results/hsGRCh38_kallisto.idx',
-        r1 = 'data/{name}_R1.fastq.gz',
-        r2 = 'data/{name}_R2.fastq.gz'
+        r1 = 'data/{name}_1.fastq.gz',
+        r2 = 'data/{name}_2.fastq.gz'
     output:
         abundance_h5 = 'results/{name}/abundance.h5'
     params:
@@ -89,8 +117,12 @@ rule quant:
 # May need to change script to path/to/R/bin/Rscript.exe path/to/your/script.R on Windows 
 rule knit_report:
     input:
-        "workflow/scripts/report.Rmd"
+        "data/SraRunTable.csv",
+        "workflow/scripts/report.Rmd",
+        expand('results/{name}/abundance.h5', name=sra_list)
     output:
         "results/report.html"
-    script:
-        "Rscript render_report.R"
+    shell:
+        '''
+        Rscript render_report.R
+        '''

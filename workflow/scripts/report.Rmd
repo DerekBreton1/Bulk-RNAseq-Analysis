@@ -26,11 +26,11 @@ library(fgsea)
 ### Create colData
 ```{r}
 # Load user input samples.txt file containing column data
-dir <- "../../results"
-coldata <- read.table(file.path(dir,"samples.txt"), header=TRUE)
+dir <- "../../data"
 
-# Manually set column data TO BE REMOVED!
-coldata$condition <- c("C","C","C","I","I","I","I","I","I")
+coldata <- as_tibble(read.csv(file.path(dir, "SraRunTable.csv"), header=TRUE)) %>%
+  dplyr::select(c("Run", "infection")) %>%
+  dplyr::rename(all_of(c(sample = "Run", condition = "infection")))
 
 coldata
 ```
@@ -54,11 +54,39 @@ head(tx2gene)
 
 ### Load Kallisto transcript abundance data
 ```{r}
+dir <- "../../results"
 files <- file.path(dir, coldata$sample, "abundance.h5")
 names(files) <- coldata$sample
 txi.kallisto <- tximport(files, type = "kallisto", tx2gene = tx2gene, ignoreTxVersion = TRUE)
 head(txi.kallisto$counts)
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -158,7 +186,8 @@ log2fc_plot <- labeled_results %>%
     dplyr::filter(padj < 0.1) %>%
     ggplot(aes(x = log2FoldChange)) +
     geom_histogram(bins = 100, color = 'black', fill = 'lightblue') +
-    ggtitle('Histogram of log2FoldChanges for DE Genes)')
+    labs(title = 'Histogram of Log2 Fold Changes for DE Genes',
+         x = "log2(Fold Change)")
 log2fc_plot
 ```
 
@@ -231,7 +260,7 @@ head(rnk_list)
 
 # Run FGSEA
 ```{r}
-gmt_file_path = "../../data/c2.all.v2024.1.Hs.symbols.gmt"
+gmt_file_path = "../../data/h.all.v2024.1.Hs.symbols.gmt"
 min_size = 15
 max_size = 500
 
