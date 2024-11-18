@@ -112,17 +112,3 @@ rule quant:
         '''
         kallisto quant -i {input.index} -o {params.outdir} -t {threads} -b 50 {input.r1} {input.r2}
         '''
-
-# Knit downstream analysis into an HTML file
-# May need to change script to path/to/R/bin/Rscript.exe path/to/your/script.R on Windows 
-rule knit_report:
-    input:
-        "data/SraRunTable.csv",
-        "workflow/scripts/report.Rmd",
-        expand('results/{name}/abundance.h5', name=sra_list)
-    output:
-        "results/report.html"
-    shell:
-        '''
-        Rscript render_report.R
-        '''
