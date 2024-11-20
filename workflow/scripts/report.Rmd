@@ -29,8 +29,8 @@ library(fgsea)
 dir <- "../../data"
 
 coldata <- as_tibble(read.csv(file.path(dir, "SraRunTable.csv"), header=TRUE)) %>%
-  dplyr::select(c("Run", "infection")) %>%
-  dplyr::rename(all_of(c(sample = "Run", condition = "infection")))
+  dplyr::select(c("Run", "treatment")) %>%
+  dplyr::rename(all_of(c(sample = "Run", condition = "treatment")))
 
 coldata
 ```
@@ -60,34 +60,6 @@ names(files) <- coldata$sample
 txi.kallisto <- tximport(files, type = "kallisto", tx2gene = tx2gene, ignoreTxVersion = TRUE)
 head(txi.kallisto$counts)
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Run PCA
@@ -122,6 +94,16 @@ pca_plot
 
 
 
+```{r}
+library(GGally)
+as_tibble(pca$x) %>%
+  mutate(condition=coldata$condition) %>%
+  dplyr::select(c(condition, PC1:PC6)) %>%
+  ggpairs(columns=1:6,mapping=aes(fill=condition))
+```
+
+
+
 # Run DESeq
 
 ### Create DESeq Dataset from txi.kallisto and run DESeq
@@ -133,7 +115,7 @@ ddsTxi <- DESeqDataSetFromTximport(txi.kallisto,
 ddsTxi
 
 dds <- DESeq(ddsTxi)
-res <- results(dds)
+res <- results(dds, contrast = c("condition", "infected 40h", "untreated"))
 res
 ```
 
@@ -191,39 +173,6 @@ log2fc_plot <- labeled_results %>%
 log2fc_plot
 ```
 
-# Function to make scatter plot of normalized counts for top ten genes ranked by ascending padj
-```{r}
-num_genes = 10
-
-#Normalize the DESeq object
-dds_norm <- as_tibble(results(estimateSizeFactors(dds))) %>%
-  dplyr::mutate(genes = rownames(results(dds)), .before = 1)
-
-# Slice the top ranked genes based on padj
-sliced_res <- dds_norm %>%
-  dplyr::slice_min(padj, n = num_genes)
-
-# Add volcano plot status and gene symbols to sliced_res
-status_symbol <- dplyr::select(labeled_results, c('genes','volc_plot_status','gene_name'))
-
-sliced_res <- merge(sliced_res, status_symbol)
-
-print(sliced_res)
-
-#Plot the labeled results
-scatter_plot <- ggplot(sliced_res, aes(x = reorder(gene_name, log2FoldChange), y = log2FoldChange)) +
-  geom_point() + 
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-scatter_plot
-```
-
-```{r}
-dds_norm
-
-labeled_dds_norm <- merge(dds_norm, tx2gene_unique[, c("gene_id", "gene_name")], by.x = "genes", by.y = "gene_id", all.x = TRUE)
-
-labeled_dds_norm
-```
 
 
 # Create volcano plot
@@ -233,7 +182,8 @@ volcano_plot <- labeled_results %>%
     dplyr::mutate(`-log10(adjusted p)` = -log10(padj)) %>%
     ggplot(aes(x = log2FoldChange, y = `-log10(adjusted p)`, color = volc_plot_status)) +
       geom_point() + 
-      ggtitle('Volcano plot')
+      ggtitle('Volcano plot') +
+      labs(color="Volcano plot status")
 volcano_plot
 ```
 
@@ -287,7 +237,6 @@ fgsea_results_tidy
 # Function to plot top ten positive NES and top ten negative NES pathways in a barchart
 ```{r}
 num_paths = 10
-
 
 
 #Select top rows of NES

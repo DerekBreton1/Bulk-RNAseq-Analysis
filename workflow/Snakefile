@@ -1,32 +1,34 @@
-sra_list = [line.strip() for line in open("data/SRR_Acc_List.txt")]
-reads = [1, 2]
+import pandas as pd
 
+# Read metadata csv into a dictionary
+metadata = pd.read_csv("data/SraRunTable.csv").set_index("Run").to_dict(orient="index")
+# Get SRR IDs from metadata
+SAMPLES = list(metadata.keys())
+print(SAMPLES)
 rule all:
     input:
-        expand('data/{name}_{read}.fastq.gz', name=sra_list, read=reads),
+        expand('data/{sample}.fastq.gz', sample=SAMPLES),
         'results/multiqc_report.html',
-        expand('results/{name}/abundance.h5', name=sra_list),
-        "results/report.html"
+        expand('results/{sample}/abundance.h5', sample=SAMPLES)
 
 # Download SRA files
 rule sra_download:
     output:
-        srr = 'data/{name}/{name}.sra'
+        srr = 'data/{sample}/{sample}.sra'
     params:
         outdir = 'data/'
     conda:
         'envs/sra_toolkit_env.yaml'
     shell:
         '''
-        python3 workflow/scripts/sra_download.py {wildcards.name} {params.outdir}
+        python3 workflow/scripts/sra_download.py {wildcards.sample} {params.outdir}
         '''
 # FASTQ download from SRA ID file
 rule fastq_download:
     input:
-        srr = 'data/{name}/{name}.sra'
+        srr = 'data/{sample}/{sample}.sra'
     output:
-        r1 = 'data/{name}_1.fastq.gz',
-        r2 = 'data/{name}_2.fastq.gz'
+        fastq = "data/{sample}.fastq.gz"
     params:
         outdir = 'data/'      
     conda:
@@ -37,24 +39,22 @@ rule fastq_download:
 # Initial quality control
 rule fastqc:
     input:
-        r1 = 'data/{name}_1.fastq.gz',
-        r2 = 'data/{name}_2.fastq.gz'
+        fastq = "data/{sample}.fastq.gz"
     output:
-        r1_qc = 'results/{name}_1_fastqc.html',
-        r2_qc = 'results/{name}_2_fastqc.html',
+        fastqc = "results/{sample}_fastqc.html"
     params:
         outdir = 'results/'
     conda:
         'envs/fastqc_env.yaml'
     shell:
         '''
-        fastqc -o {params.outdir} {input.r1} {input.r2}
+        fastqc -o {params.outdir} {input.fastq}
         '''
 
 # Aggregate the fastqc files
 rule multiqc:
     input:
-        expand('results/{name}_{read}_fastqc.html', name = sra_list, read = reads)
+        expand("results/{sample}_fastqc.html", sample=SAMPLES)
     output:
         report = 'results/multiqc_report.html'
     params:
@@ -99,16 +99,15 @@ rule build_kallisto_index:
 rule quant:
     input:
         index = 'results/hsGRCh38_kallisto.idx',
-        r1 = 'data/{name}_1.fastq.gz',
-        r2 = 'data/{name}_2.fastq.gz'
+        fastq = "data/{sample}.fastq.gz"
     output:
-        abundance_h5 = 'results/{name}/abundance.h5'
+        abundance_h5 = 'results/{sample}/abundance.h5'
     params:
-        outdir = 'results/{name}'
+        outdir = 'results/{sample}'
     threads: 2
     conda:
         'envs/kallisto_env.yaml'
     shell:
         '''
-        kallisto quant -i {input.index} -o {params.outdir} -t {threads} -b 50 {input.r1} {input.r2}
+        kallisto quant -i {input.index} -o {params.outdir} -b 50 --single -l 200 -s 20 {input.fastq}
         '''
